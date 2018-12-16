@@ -8,73 +8,47 @@ import random
 import glob
 import pickle
 from os.path import join
-from random import shuffle
 
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 
-
-# Dataset related globals.
-DATASET = 'kitti_2015' # options are ['kitti_2012', 'kitti_2015']
-PHASE = 'training'
-DATA_PATH = join('data', DATASET, PHASE)
-OUT_CACHE_PATH = join('cache', DATASET, PHASE)
-
-if DATASET == 'kitti_2012':
-    LEFT_IMG_FOLDER = 'image_0'
-    RIGHT_IMG_FOLDER = 'image_1'
-    DISPARITY_FOLDER = 'disp_noc'
-    N_VAL = 34
-elif DATASET == 'kitti_2015':
-    LEFT_IMG_FOLDER = 'image_2'
-    RIGHT_IMG_FOLDER = 'image_3'
-    DISPARITY_FOLDER = 'disp_noc_1'
-    N_VAL = 40
-
-# Pre-processing related globals.
-IMG_HEIGHT = 370
-IMG_WIDTH = 1224
-PATCH_SIZE = 37
-HALF_PATCH_SIZE = (PATCH_SIZE // 2)
-DISPARITY_RANGE = 201
-HALF_RANGE = DISPARITY_RANGE // 2
-N_TRAIN = 160
-
-# Fix random seed, so train/val split remains same.
-random.seed(5)
+from utils import *
 
 
-def load_image_paths():
-    left_image_paths = sorted(glob.glob(join(DATA_PATH, LEFT_IMG_FOLDER, '*10.png')))
-    right_image_paths = sorted(glob.glob(join(DATA_PATH, RIGHT_IMG_FOLDER, '*10.png')))
-    disparity_image_paths = sorted(glob.glob(join(DATA_PATH, DISPARITY_FOLDER, '*10.png')))
+def load_image_paths(data_path, left_img_folder, right_img_folder,
+                     disparity_folder):
+    left_image_paths = sorted(glob.glob(join(data_path, left_img_folder, '*10.png')))
+    right_image_paths = sorted(glob.glob(join(data_path, right_img_folder, '*10.png')))
+    disparity_image_paths = sorted(glob.glob(join(data_path, disparity_folder, '*10.png')))
 
     return left_image_paths, right_image_paths, disparity_image_paths
 
 
-def _is_valid_location(sample_locations, img_width, img_height):
+def _is_valid_location(sample_locations, img_width, img_height,
+                       half_patch_size, half_range):
     left_center_x, left_center_y, right_center_x, right_center_y = sample_locations
-    is_valid_loc_left = ((left_center_x + HALF_PATCH_SIZE + 1) <= img_width) and \
-            ((left_center_x - HALF_PATCH_SIZE) >= 0) and \
-            ((left_center_y + HALF_PATCH_SIZE + 1) <= img_height) and \
-            ((left_center_y - HALF_PATCH_SIZE) >= 0)
-    is_valid_loc_right = ((right_center_x - HALF_RANGE - HALF_PATCH_SIZE) >= 0) and \
-            ((right_center_x + HALF_RANGE + HALF_PATCH_SIZE + 1) <= img_width) and \
-            ((right_center_y - HALF_PATCH_SIZE) >= 0) and \
-            ((right_center_y + HALF_PATCH_SIZE + 1) <= img_height)
+    is_valid_loc_left = ((left_center_x + half_patch_size + 1) <= img_width) and \
+            ((left_center_x - half_patch_size) >= 0) and \
+            ((left_center_y + half_patch_size + 1) <= img_height) and \
+            ((left_center_y - half_patch_size) >= 0)
+    is_valid_loc_right = ((right_center_x - half_range - half_patch_size) >= 0) and \
+            ((right_center_x + half_range + half_patch_size + 1) <= img_width) and \
+            ((right_center_y - half_patch_size) >= 0) and \
+            ((right_center_y + half_patch_size + 1) <= img_height)
 
     return (is_valid_loc_left and is_valid_loc_right)
 
 
-def compute_valid_locations(disparity_image_paths, sample_ids):
+def compute_valid_locations(disparity_image_paths, sample_ids, img_height,
+                            img_width, half_patch_size, half_range):
     num_samples = len(sample_ids)
     num_valid_locations = np.zeros(num_samples)
 
     for i, idx in enumerate(sample_ids):
         disp_img = np.array(Image.open(disparity_image_paths[idx])).astype('float64')
         # We want images of same size for efficient loading.
-        disp_img = disp_img[0:IMG_HEIGHT, 0:IMG_WIDTH]
+        disp_img = trim_image(disp_img, img_height, img_width)
         disp_img /= 256
         num_valid_locations[i] = (disp_img != 0).sum()
 
@@ -85,9 +59,10 @@ def compute_valid_locations(disparity_image_paths, sample_ids):
     for i, idx in enumerate(sample_ids):
         disp_img = np.array(Image.open(disparity_image_paths[idx])).astype('float64')
         # We want images of same size for efficient loading.
-        disp_img = disp_img[0:IMG_HEIGHT, 0:IMG_WIDTH]
+        disp_img = disp_img[0:img_height, 0:img_width]
         disp_img /= 256
         row_locs, col_locs = np.where(disp_img != 0)
+        # NOTE: Remove later.
         img_height, img_width = disp_img.shape
 
         for j, row_loc in enumerate(row_locs):
@@ -98,7 +73,8 @@ def compute_valid_locations(disparity_image_paths, sample_ids):
             right_center_y = left_center_y # Stereo pair is assumed to be rectified.
 
             sample_locations = (left_center_x, left_center_y, right_center_x, right_center_y)
-            if _is_valid_location(sample_locations, img_width, img_height):
+            if _is_valid_location(sample_locations, img_width, img_height,
+                                  half_patch_size, half_range):
                 location_info = np.array([idx, left_center_x,
                                           left_center_y,
                                           right_center_x])
@@ -106,21 +82,31 @@ def compute_valid_locations(disparity_image_paths, sample_ids):
                 valid_count += 1
 
     valid_locations = valid_locations[0:valid_count, :]
+    np.random.shuffle(valid_locations) # Shuffle samples.
     print(valid_locations.shape)
 
     return valid_locations
 
 
-def find_patch_locations():
-    left_image_paths, right_image_paths, disparity_image_paths = load_image_paths()
+def find_and_store_patch_locations(settings):
+    left_image_paths, right_image_paths, disparity_image_paths = \
+            load_image_paths(settings.data_path, settings.left_img_folder,
+                             settings.left_img_folder, settings.disparity_folder)
     sample_indices = list(range(len(left_image_paths)))
     shuffle(sample_indices)
-    train_ids, val_ids = sample_indices[0:N_TRAIN], sample_indices[N_TRAIN:]
+    train_ids = sample_indices[0:settings.num_train]
+    val_ids = sample_indices[settings.num_train:]
 
     # Training set.
-    valid_locations_train = compute_valid_locations(disparity_image_paths, train_ids)
+    valid_locations_train = compute_valid_locations(disparity_image_paths,
+                                                    train_ids,
+                                                    settings.img_height,
+                                                    setting.img_width)
     # Validation set.
-    valid_locations_val = compute_valid_locations(disparity_image_paths, val_ids)
+    valid_locations_val = compute_valid_locations(disparity_image_paths,
+                                                  val_ids,
+                                                  settings.img_height,
+                                                  setting.img_width)
 
     # Save to disk
     contents_to_save = {'sample_indices': sample_indices,
@@ -129,14 +115,16 @@ def find_patch_locations():
                         'valid_locations_train': valid_locations_train,
                         'valid_locations_val': valid_locations_val}
 
-    os.makedirs(OUT_CACHE_PATH, exist_ok=True)
-    with open(join(OUT_CACHE_PATH, 'patch_locations.pkl'), 'wb') as handle:
+    os.makedirs(settings.out_cache_path, exist_ok=True)
+    with open(join(settings.out_cache_path, 'patch_locations.pkl'), 'wb') as handle:
         pickle.dump(contents_to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print('Patch locations cache file saved.')
 
-def display_sample():
-    left_image_paths, right_image_paths, disparity_image_paths = load_image_paths()
 
+def display_sample(settings):
+    left_image_paths, right_image_paths, disparity_image_paths = \
+            load_image_paths(settings.data_path, settings.left_img_folder,
+                             settings.left_img_folder, settings.disparity_folder)
     idx = random.randint(0, len(left_image_paths))
     l_img = np.array(Image.open(left_image_paths[idx]))
     r_img = np.array(Image.open(right_image_paths[idx]))
@@ -168,9 +156,3 @@ def show_images(images, cols = 1, titles = None):
         a.set_title(title)
     fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
     plt.show()
-
-
-if __name__ == '__main__':
-    print('Finding patch locations ...')
-    find_patch_locations()
-    # display_sample()

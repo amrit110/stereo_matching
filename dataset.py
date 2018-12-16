@@ -7,72 +7,91 @@ import pickle
 import numpy as np
 import tensorflow as tf
 
-from pre_process import *
+from pre_process import load_image_paths
+from utils import trim_image
 
 
-def load_image(image_path):
+def load_image(image_path, img_height, img_width):
     image_file = tf.read_file(image_path)
-    image = tf.image.decode_png(image_file)
-    image = image[0:IMG_HEIGHT, 0:IMG_WIDTH]
+    img = tf.image.decode_png(image_file)
+    img = trim_image(img, img_height, img_width)
+    img = tf.image.per_image_standardization(img)
 
-    return image
+    return img
 
 
-def load_images(left_image_paths, right_image_paths):
+def load_images(left_image_paths, right_image_paths, img_height, img_width):
     left_images = []
     right_images = []
     for idx in range(left_image_paths.shape[0]):
-        left_images.append(load_image(left_image_paths[idx]))
-        right_images.append(load_image(left_image_paths[idx]))
+        left_images.append(load_image(left_image_paths[idx], img_height, img_width))
+        right_images.append(load_image(left_image_paths[idx], img_height, img_width))
 
     return tf.convert_to_tensor(left_images), tf.convert_to_tensor(right_images)
 
 
-def _parse_function(sample_info):
-    # Unpack.
-    idx = tf.to_int32(sample_info[0])
-    left_center_x = tf.to_int32(sample_info[1])
-    left_center_y = tf.to_int32(sample_info[2])
-    right_center_x = tf.to_int32(sample_info[3])
+def get_labels(disparity_range, half_range):
+    gt = np.zeros((disparity_range))
 
-    # left_image_path = left_image_paths[idx]
-    # left_image = load_image(left_image_path)
-    left_image = left_images[idx]
+    # NOTE: Smooth targets are [0.05, 0.2, 0.5, 0.2, 0.05], hard-coded.
+    gt[half_range - 2: half_range + 3] = np.array([0.05, 0.2, 0.5, 0.2, 0.05])
 
-    # right_image_path = right_image_paths[idx]
-    # right_image = load_image(right_image_path)
-    right_image = right_images[idx]
-
-    left_patch = left_image[left_center_y - HALF_PATCH_SIZE:left_center_y + HALF_PATCH_SIZE + 1,
-                            left_center_x - HALF_PATCH_SIZE:left_center_x + HALF_PATCH_SIZE + 1, :]
-    right_patch = right_image[left_center_y - HALF_PATCH_SIZE:left_center_y + HALF_PATCH_SIZE + 1,
-                              right_center_x - HALF_PATCH_SIZE - HALF_RANGE:right_center_x + \
-                              HALF_PATCH_SIZE + HALF_RANGE + 1, :]
-
-    return left_patch, right_patch
+    return gt
 
 
-def create_dataset(valid_locations):
-    valid_locations_train = valid_locations['valid_locations_train']
+class Dataset:
 
-    dataset = tf.data.Dataset.from_tensor_slices(valid_locations_train)
+    def __init__(self, settings, patch_locations, phase):
+        self._settings = settings
+        left_image_paths, right_image_paths, _ = \
+                [tf.constant(paths) for paths in
+                 load_image_paths(settings.data_path,
+                                  settings.left_img_folder,
+                                  settings.right_img_folder,
+                                  settings.disparity_folder)]
+        self.left_images, self.right_images = load_images(left_image_paths,
+                                                          right_image_paths,
+                                                          settings.img_height,
+                                                          settings.img_width)
+        self.iterator = self.create_dataset_iterator(patch_locations, phase)
 
-    dataset = dataset.map(_parse_function)
-    batched_dataset = dataset.batch(128)
+    def _parse_function(self, sample_info):
+        idx = tf.to_int32(sample_info[0])
+        left_center_x = tf.to_int32(sample_info[1])
+        left_center_y = tf.to_int32(sample_info[2])
+        right_center_x = tf.to_int32(sample_info[3])
 
-    iterator = batched_dataset.make_one_shot_iterator()
+        left_image = self.left_images[idx]
+        right_image = self.right_images[idx]
 
-    for i in range(100):
-        next_element = iterator.get_next()
-        print(next_element[0].shape, next_element[1].shape)
+        left_patch = left_image[left_center_y -\
+                                self._settings.half_patch_size:left_center_y +\
+                                self._settings.half_patch_size + 1,
+                                left_center_x -\
+                                self._settings.half_patch_size:left_center_x +\
+                                self._settings.half_patch_size + 1, :]
+        right_patch = right_image[left_center_y -\
+                                  self._settings.half_patch_size:left_center_y +\
+                                  self._settings.half_patch_size + 1,
+                                  right_center_x - self._settings.half_patch_size -\
+                                  self._settings.half_range:right_center_x +\
+                                  self._settings.half_patch_size +\
+                                  self._settings.half_range + 1, :]
 
-if __name__=='__main__':
-    tf.enable_eager_execution()
-    with open('cache/kitti_2015/training/patch_locations.pkl', 'rb') as handle:
-        valid_locations = pickle.load(handle)
+        labels = tf.convert_to_tensor(get_labels(self._settings.disparity_range,
+                                                 self._settings.half_range))
 
-    left_image_paths, right_image_paths, _ = \
-            [tf.constant(paths) for paths in load_image_paths()]
-    left_images, right_images = load_images(left_image_paths,
-                                            right_image_paths)
-    dataset = create_dataset(valid_locations)
+        return left_patch, right_patch, labels
+
+    def create_dataset_iterator(self, patch_locations, phase='train'):
+        if phase == 'train':
+            dataset_locations = patch_locations['valid_locations_train']
+        elif phase == 'val':
+            dataset_locations = patch_locations['valid_locations_val']
+
+        dataset = tf.data.Dataset.from_tensor_slices(dataset_locations)
+        dataset = dataset.map(self._parse_function)
+        batched_dataset = dataset.batch(self._settings.batch_size)
+        iterator = batched_dataset.make_one_shot_iterator()
+
+        return iterator
