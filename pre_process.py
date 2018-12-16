@@ -5,6 +5,7 @@ to sample mini-batches for training."""
 # Imports.
 import os
 import random
+from random import shuffle
 import glob
 import pickle
 from os.path import join
@@ -101,12 +102,16 @@ def find_and_store_patch_locations(settings):
     valid_locations_train = compute_valid_locations(disparity_image_paths,
                                                     train_ids,
                                                     settings.img_height,
-                                                    setting.img_width)
+                                                    settings.img_width,
+                                                    settings.half_patch_size,
+                                                    settings.half_range)
     # Validation set.
     valid_locations_val = compute_valid_locations(disparity_image_paths,
                                                   val_ids,
                                                   settings.img_height,
-                                                  setting.img_width)
+                                                  settings.img_width,
+                                                  settings.half_patch_size,
+                                                  settings.half_range)
 
     # Save to disk
     contents_to_save = {'sample_indices': sample_indices,

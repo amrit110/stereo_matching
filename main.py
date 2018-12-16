@@ -13,6 +13,7 @@ from tensorflow.contrib.eager.python import tfe
 
 from model import SiameseStereoMatching
 from dataset import Dataset
+from pre_process import find_and_store_patch_locations
 
 # Enable eager execution.
 tf.enable_eager_execution()
@@ -72,7 +73,7 @@ random.seed(settings.seed)
 # Patch locations.
 patch_locations_path = join(settings.out_cache_path, 'patch_locations.pkl')
 if settings.find_patch_locations or not isfile(patch_locations_path):
-    find_and_store_patch_locations()
+    find_and_store_patch_locations(settings)
 with open(patch_locations_path, 'rb') as handle:
     patch_locations = pickle.load(handle)
 

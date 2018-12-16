@@ -93,9 +93,8 @@ class SiameseStereoMatching(tf.keras.Model):
                 self.history['val_loss'].append(val_loss.result().numpy())
 
                 # Print train and eval losses.
-                if (i==0) | ((i+1) % args.verbose == 0):
-                    print('Train loss at epoch %d: ' %(i+1), self.history['train_loss'][-1])
-                    print('Eval loss at epoch %d: ' %(i+1), self.history['eval_loss'][-1])
+                print('Train loss at iteration {}: {:04f}'.format(i+1, self.history['train_loss'][-1]))
+                print('Eval loss at iteration {}: {:04f}'.format(i+1, self.history['val_loss'][-1]))
 
     def grads_fn(self, batch, training=None):
         with tfe.GradientTape() as tape:
