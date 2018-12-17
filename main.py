@@ -7,13 +7,17 @@ import argparse
 import random
 from random import shuffle
 import pickle
+import logging
 
+import matplotlib
+matplotlib.use('agg')
 import tensorflow as tf
 from tensorflow.contrib.eager.python import tfe
 
 from model import SiameseStereoMatching
 from dataset import Dataset
 from pre_process import find_and_store_patch_locations
+from utils import setup_logging
 
 # Enable eager execution.
 tf.enable_eager_execution()
@@ -34,7 +38,7 @@ parser.add_argument('--dataset', default='kitti_2015', choices=['kitti_2012',
 parser.add_argument('--seed', default=3, help='random seed')
 parser.add_argument('--patch-size', default=37, help='patch size from left image')
 parser.add_argument('--disparity-range', default=201, help='disparity range')
-parser.add_argument('--learning-rate', default=0.01, help='initial learning rate')
+parser.add_argument('--learning-rate', default=0.001, help='initial learning rate')
 parser.add_argument('--find-patch-locations', default=False,
                     help='find and store patch locations')
 parser.add_argument('--num_iterations', default=40000,
@@ -66,6 +70,17 @@ elif settings.dataset == 'kitti_2015':
     setattr(settings, 'num_val', 40)
 
 
+# Python logging and tensorboard.
+LOGGER = logging.getLogger(__name__)
+exp_dir = join('experiments', '{}'.format(settings.exp_name))
+log_file = join(exp_dir, 'log.log')
+os.makedirs(exp_dir, exist_ok=True)
+setup_logging(log_path=log_file, log_level=settings.log_level, logger=LOGGER)
+settings_file = join(exp_dir, 'settings.log')
+with open(settings_file, 'w') as the_file:
+    the_file.write(str(settings))
+
+
 # Set random seed, so train/val split remains same.
 random.seed(settings.seed)
 
@@ -73,15 +88,17 @@ random.seed(settings.seed)
 # Patch locations.
 patch_locations_path = join(settings.out_cache_path, 'patch_locations.pkl')
 if settings.find_patch_locations or not isfile(patch_locations_path):
+    LOGGER.info('Calculating patch locations ...')
     find_and_store_patch_locations(settings)
 with open(patch_locations_path, 'rb') as handle:
     patch_locations = pickle.load(handle)
+    LOGGER.info('Patch locations loaded ...')
 
 
 # Model.
 device = '/cpu:0' if tfe.num_gpus() == 0 else '/gpu:0'
 with tf.device(device):
-    model = SiameseStereoMatching(1, device)
+    model = SiameseStereoMatching(3, device, exp_dir, LOGGER)
 
 
 # Optimizer
@@ -89,9 +106,10 @@ optimizer = tf.train.AdagradOptimizer(learning_rate=settings.learning_rate)
 
 
 # Dataset iterators.
+LOGGER.info('Initializing training and validation datasets ...')
 training_dataset = Dataset(settings, patch_locations, phase='train')
 validation_dataset = Dataset(settings, patch_locations, phase='val')
 
-
+LOGGER.info('Starting training ...')
 model.fit(training_dataset, validation_dataset, optimizer,
           settings.num_iterations)

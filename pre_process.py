@@ -84,7 +84,6 @@ def compute_valid_locations(disparity_image_paths, sample_ids, img_height,
 
     valid_locations = valid_locations[0:valid_count, :]
     np.random.shuffle(valid_locations) # Shuffle samples.
-    print(valid_locations.shape)
 
     return valid_locations
 
@@ -123,7 +122,6 @@ def find_and_store_patch_locations(settings):
     os.makedirs(settings.out_cache_path, exist_ok=True)
     with open(join(settings.out_cache_path, 'patch_locations.pkl'), 'wb') as handle:
         pickle.dump(contents_to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        print('Patch locations cache file saved.')
 
 
 def display_sample(settings):
