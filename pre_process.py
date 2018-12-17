@@ -1,4 +1,4 @@
-"""Pre-process dataset labels to sample patches for training.
+"""Pre-process KITTI stereo dataset labels to find patch locations for training.
 
 This module has functions to help figure out the patch locations to sample
 for training. The patch locations are saved as an array in a pickle file, which
@@ -48,6 +48,7 @@ def load_image_paths(data_path, left_img_folder, right_img_folder,
 
 def _is_valid_location(sample_locations, img_width, img_height,
                        half_patch_size, half_range):
+    """Check if left and right patches is within image dimensions."""
     left_center_x, left_center_y, right_center_x, right_center_y = sample_locations
     is_valid_loc_left = ((left_center_x + half_patch_size + 1) <= img_width) and \
             ((left_center_x - half_patch_size) >= 0) and \
@@ -68,7 +69,7 @@ def _compute_valid_locations(disparity_image_paths, sample_ids, img_height,
 
     for i, idx in enumerate(sample_ids):
         disp_img = np.array(Image.open(disparity_image_paths[idx])).astype('float64')
-        # We want images of same size for efficient loading.
+        # NOTE: We want images of same size for efficient loading.
         disp_img = trim_image(disp_img, img_height, img_width)
         disp_img /= 256
         num_valid_locations[i] = (disp_img != 0).sum()
@@ -79,11 +80,10 @@ def _compute_valid_locations(disparity_image_paths, sample_ids, img_height,
 
     for i, idx in enumerate(sample_ids):
         disp_img = np.array(Image.open(disparity_image_paths[idx])).astype('float64')
-        # We want images of same size for efficient loading.
+        # NOTE: We want images of same size for efficient loading.
         disp_img = disp_img[0:img_height, 0:img_width]
         disp_img /= 256
         row_locs, col_locs = np.where(disp_img != 0)
-        # NOTE: Remove later.
         img_height, img_width = disp_img.shape
 
         for j, row_loc in enumerate(row_locs):
@@ -103,7 +103,9 @@ def _compute_valid_locations(disparity_image_paths, sample_ids, img_height,
                 valid_count += 1
 
     valid_locations = valid_locations[0:valid_count, :]
-    np.random.shuffle(valid_locations) # Shuffle samples.
+    # NOTE: Shuffle patch locations info here, this will be used to directly
+    # present samples in a min-batch while training.
+    np.random.shuffle(valid_locations)
 
     return valid_locations
 
@@ -199,13 +201,14 @@ def _show_images(images, cols=1, titles=None):
 
 
 if __name__ == '__main__':
+    # NOTE: Some code to debug patch locations and look at the images.
     with open('cache/kitti_2015/training/patch_locations.pkl', 'rb') as handle:
         valid_locations = pickle.load(handle)
     left_image_paths, right_image_paths, disparity_image_paths = \
             load_image_paths('data/kitti_2015/training',
                              'image_2',
                              'image_3',
-                             'disp_noc_1')
+                             'disp_noc_0')
     idx = 30001
     sample_info = list(valid_locations['valid_locations_val'][idx])
     sample_info = [int(i) for i in sample_info]

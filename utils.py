@@ -8,6 +8,17 @@ LOG_FORMAT = '%(asctime)-15s %(levelname)-5s %(name)-15s - %(message)s'
 
 
 def trim_image(img, img_height, img_width):
+    """Trim image to remove pixels on the right and bottom.
+
+    Args:
+        img (numpy.ndarray): input image.
+        img_height (int): desired image height.
+        img_width (int): desired image width.
+
+    Returns:
+        (numpy.ndarray): trimmed image.
+
+    """
     return img[0:img_height, 0:img_width]
 
 

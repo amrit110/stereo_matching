@@ -1,4 +1,9 @@
-"""Training script."""
+"""Main project script.
+
+This script is used to train a TensorFlow re-implementation of
+Luo, W., & Schwing, A. G. (n.d.). Efficient Deep Learning for Stereo Matching.
+
+"""
 
 # Imports.
 import os
@@ -27,7 +32,7 @@ tf.enable_eager_execution()
 parser = argparse.ArgumentParser(
     description='Re-implementation of Efficient Deep Learning for Stereo Matching')
 parser.add_argument('--resume', '-r', default=False, help='resume from checkpoint')
-parser.add_argument('--exp-name', default='debug', type=str,
+parser.add_argument('--exp-name', default='debug_1', type=str,
                     help='name of experiment')
 parser.add_argument('--log-level', default='INFO', choices = ['DEBUG', 'INFO'],
                     help='log-level to use')
@@ -71,6 +76,7 @@ elif settings.dataset == 'kitti_2015':
     setattr(settings, 'num_val', 40)
     setattr(settings, 'num_input_channels', 3)
 
+
 # Python logging and tensorboard.
 LOGGER = logging.getLogger(__name__)
 exp_dir = join('experiments', '{}'.format(settings.exp_name))
@@ -82,7 +88,9 @@ with open(settings_file, 'w') as the_file:
     the_file.write(str(settings))
 
 
-# Set random seed, so train/val split remains same.
+# Set random seed.
+# NOTE: The seed affects the train/val split if patch locations data is
+# created, useful for reproducing results..
 random.seed(settings.seed)
 
 
@@ -98,12 +106,18 @@ with open(patch_locations_path, 'rb') as handle:
 
 # Model.
 device = '/cpu:0' if tfe.num_gpus() == 0 else '/gpu:0'
+global_step = tf.Variable(0, trainable=False)
 with tf.device(device):
-    model = SiameseStereoMatching(settings.num_input_channels, device, exp_dir, LOGGER)
+    model = SiameseStereoMatching(settings.num_input_channels, device, exp_dir,
+                                  LOGGER, global_step)
 
 
 # Optimizer
-optimizer = tf.train.AdagradOptimizer(learning_rate=settings.learning_rate)
+boundaries, lr_values = [24000, 32000], [settings.learning_rate,
+                                         settings.learning_rate/5,
+                                         settings.learning_rate/25]
+learning_rate = tf.train.piecewise_constant(global_step, boundaries, lr_values)
+optimizer = tf.train.AdagradOptimizer(learning_rate=learning_rate)
 
 
 # Dataset iterators.
@@ -114,3 +128,4 @@ validation_dataset = Dataset(settings, patch_locations, phase='val')
 LOGGER.info('Starting training ...')
 model.fit(training_dataset, validation_dataset, optimizer,
           settings.num_iterations)
+LOGGER.info('Training done ...')
