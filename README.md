@@ -22,17 +22,17 @@ data
 #### Example input patches
 
 <p float="left">
- <img src="/plots/sample_patch_left_1.png" width="64" />
+ <img src="/plots/sample_patch_left_1.png" width="50" />
  <img src="/plots/sample_patch_right_1.png" width="320" />
 </p>
 
 <p float="left">
- <img src="/plots/sample_patch_left_2.png" width="64" />
+ <img src="/plots/sample_patch_left_2.png" width="50" />
  <img src="/plots/sample_patch_right_2.png" width="320" />
 </p>
 
 <p float="left">
- <img src="/plots/sample_patch_left_3.png" width="64" />
+ <img src="/plots/sample_patch_left_3.png" width="50" />
  <img src="/plots/sample_patch_right_3.png" width="320" />
 </p>
 
