@@ -38,7 +38,7 @@ parser.add_argument('--dataset', default='kitti_2015', choices=['kitti_2012',
 parser.add_argument('--seed', default=3, help='random seed')
 parser.add_argument('--patch-size', default=37, help='patch size from left image')
 parser.add_argument('--disparity-range', default=201, help='disparity range')
-parser.add_argument('--learning-rate', default=0.001, help='initial learning rate')
+parser.add_argument('--learning-rate', default=0.01, help='initial learning rate')
 parser.add_argument('--find-patch-locations', default=False,
                     help='find and store patch locations')
 parser.add_argument('--num_iterations', default=40000,
@@ -63,12 +63,13 @@ if settings.dataset == 'kitti_2012':
     setattr(settings, 'right_img_folder', 'image_1')
     setattr(settings, 'disparity_folder', 'disp_noc')
     setattr(settings, 'num_val', 34)
+    setattr(settings, 'num_input_channels', 1)
 elif settings.dataset == 'kitti_2015':
     setattr(settings, 'left_img_folder', 'image_2')
     setattr(settings, 'right_img_folder', 'image_3')
-    setattr(settings, 'disparity_folder', 'disp_noc_1')
+    setattr(settings, 'disparity_folder', 'disp_noc_0')
     setattr(settings, 'num_val', 40)
-
+    setattr(settings, 'num_input_channels', 3)
 
 # Python logging and tensorboard.
 LOGGER = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ with open(patch_locations_path, 'rb') as handle:
 # Model.
 device = '/cpu:0' if tfe.num_gpus() == 0 else '/gpu:0'
 with tf.device(device):
-    model = SiameseStereoMatching(3, device, exp_dir, LOGGER)
+    model = SiameseStereoMatching(settings.num_input_channels, device, exp_dir, LOGGER)
 
 
 # Optimizer
