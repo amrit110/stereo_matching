@@ -37,7 +37,7 @@ def load_images(left_image_paths, right_image_paths, img_height, img_width):
     right_images = []
     for idx in range(left_image_paths.shape[0]):
         left_images.append(load_image(left_image_paths[idx], img_height, img_width))
-        right_images.append(load_image(left_image_paths[idx], img_height, img_width))
+        right_images.append(load_image(right_image_paths[idx], img_height, img_width))
 
     return tf.convert_to_tensor(left_images), tf.convert_to_tensor(right_images)
 

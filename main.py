@@ -16,7 +16,7 @@ from tensorflow.contrib.eager.python import tfe
 
 from model import SiameseStereoMatching
 from dataset import Dataset
-from pre_process import find_and_store_patch_locations
+from pre_process import *
 from utils import setup_logging
 
 # Enable eager execution.
