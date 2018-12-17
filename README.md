@@ -41,13 +41,13 @@ data
 ##### KITTI 2015
 
 <p float="left">
- <img src="/plots/qualitative_sample_1.png" width="640" />
+ <img src="/plots/qualitative_sample_1.png" width="800" />
 </p>
 
 <p float="left">
- <img src="/plots/qualitative_sample_2.png" width="640" />
+ <img src="/plots/qualitative_sample_2.png" width="800" />
 </p>
 
 <p float="left">
- <img src="/plots/qualitative_sample_3.png" width="640" />
+ <img src="/plots/qualitative_sample_3.png" width="800" />
 </p>
