@@ -1,5 +1,13 @@
-"""Visualize KITTI stereo and disparity images. Pre-process to create dataset
-to sample mini-batches for training."""
+"""Pre-process dataset labels to sample patches for training.
+
+This module has functions to help figure out the patch locations to sample
+for training. The patch locations are saved as an array in a pickle file, which
+is used during training.
+
+This code is inspired by the MATLAB pre-processing code found at
+https://bitbucket.org/saakuraa/cvpr16_stereo_public.
+
+"""
 
 
 # Imports.
@@ -19,6 +27,18 @@ from utils import *
 
 def load_image_paths(data_path, left_img_folder, right_img_folder,
                      disparity_folder):
+    """Load paths to images.
+
+    Args:
+        data_path (str): path to main dataset folder.
+        left_img_folder (str): path to image folder with left camera images.
+        right_img_folder (str): path to image folder with right camera images.
+        disparity_folder (str): path to image folder with disparity images.
+
+    Returns:
+        (tuple): tuple of lists with paths to images.
+
+    """
     left_image_paths = sorted(glob.glob(join(data_path, left_img_folder, '*10.png')))
     right_image_paths = sorted(glob.glob(join(data_path, right_img_folder, '*10.png')))
     disparity_image_paths = sorted(glob.glob(join(data_path, disparity_folder, '*10.png')))
@@ -41,7 +61,7 @@ def _is_valid_location(sample_locations, img_width, img_height,
     return (is_valid_loc_left and is_valid_loc_right)
 
 
-def compute_valid_locations(disparity_image_paths, sample_ids, img_height,
+def _compute_valid_locations(disparity_image_paths, sample_ids, img_height,
                             img_width, half_patch_size, half_range):
     num_samples = len(sample_ids)
     num_valid_locations = np.zeros(num_samples)
@@ -89,6 +109,13 @@ def compute_valid_locations(disparity_image_paths, sample_ids, img_height,
 
 
 def find_and_store_patch_locations(settings):
+    """Find patch locations, save locations array to file.
+
+    Args:
+        settings (argparse.Namespace): settings for the project derived from
+        main script.
+
+    """
     left_image_paths, right_image_paths, disparity_image_paths = \
             load_image_paths(settings.data_path, settings.left_img_folder,
                              settings.left_img_folder, settings.disparity_folder)
@@ -98,19 +125,19 @@ def find_and_store_patch_locations(settings):
     val_ids = sample_indices[settings.num_train:]
 
     # Training set.
-    valid_locations_train = compute_valid_locations(disparity_image_paths,
-                                                    train_ids,
-                                                    settings.img_height,
-                                                    settings.img_width,
-                                                    settings.half_patch_size,
-                                                    settings.half_range)
+    valid_locations_train = _compute_valid_locations(disparity_image_paths,
+                                                     train_ids,
+                                                     settings.img_height,
+                                                     settings.img_width,
+                                                     settings.half_patch_size,
+                                                     settings.half_range)
     # Validation set.
-    valid_locations_val = compute_valid_locations(disparity_image_paths,
-                                                  val_ids,
-                                                  settings.img_height,
-                                                  settings.img_width,
-                                                  settings.half_patch_size,
-                                                  settings.half_range)
+    valid_locations_val = _compute_valid_locations(disparity_image_paths,
+                                                   val_ids,
+                                                   settings.img_height,
+                                                   settings.img_width,
+                                                   settings.half_patch_size,
+                                                   settings.half_range)
 
     # Save to disk
     contents_to_save = {'sample_indices': sample_indices,
@@ -125,6 +152,13 @@ def find_and_store_patch_locations(settings):
 
 
 def display_sample(settings):
+    """Display a random sample (left, right and disparity images) from dataset.
+
+    Args:
+        settings (argparse.Namespace): settings for the project derived from
+        main script.
+
+    """
     left_image_paths, right_image_paths, disparity_image_paths = \
             load_image_paths(settings.data_path, settings.left_img_folder,
                              settings.left_img_folder, settings.disparity_folder)
@@ -132,13 +166,15 @@ def display_sample(settings):
     l_img = np.array(Image.open(left_image_paths[idx]))
     r_img = np.array(Image.open(right_image_paths[idx]))
     disp_img = np.array(Image.open(disparity_image_paths[idx]))
+    cmap = plt.cm.jet
+    norm = plt.Normalize(vmin=disp_img.min(), vmax=disp_img.max())
+    disp_img = cmap(norm(disp_img))
+    _show_images([l_img, r_img, disp_img], cols=2, titles=['left image',
+                                                           'right image',
+                                                           'disparity'])
 
-    show_images([l_img, r_img, disp_img], cols=2, titles=['left image',
-                                                          'right image',
-                                                          'disparity'])
 
-
-def show_images(images, cols = 1, titles = None):
+def _show_images(images, cols=1, titles=None):
     """Display multiple images arranged as a table.
 
     Args:
@@ -158,4 +194,5 @@ def show_images(images, cols = 1, titles = None):
         plt.imshow(image)
         a.set_title(title)
     fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
-    plt.show()
+    # plt.show() # Open window if using local virtual-env.
+    plt.savefig('sample.png') # Save if using docker.

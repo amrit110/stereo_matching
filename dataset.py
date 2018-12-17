@@ -12,6 +12,17 @@ from utils import trim_image
 
 
 def load_image(image_path, img_height, img_width):
+    """Load image as tf.Tensor.
+
+    Args:
+        image_path (str): path to image.
+        img_height (int): desired height of output image (excess trimmed).
+        img_width (int): desired width of output image (excess trimmed).
+
+    Returns:
+        img (tf.Tensor): image array as tensor.
+
+    """
     image_file = tf.read_file(image_path)
     img = tf.image.decode_png(image_file)
     img = trim_image(img, img_height, img_width)
