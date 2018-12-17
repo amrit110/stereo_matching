@@ -9,6 +9,7 @@ import tensorflow as tf
 
 from pre_process import load_image_paths
 from utils import trim_image
+from PIL import Image
 
 
 def load_image(image_path, img_height, img_width):
@@ -77,6 +78,7 @@ class Dataset:
                                   self._settings.half_range:right_center_x +\
                                   self._settings.half_patch_size +\
                                   self._settings.half_range + 1, :]
+
 
         labels = tf.convert_to_tensor(get_labels(self._settings.disparity_range,
                                                  self._settings.half_range))

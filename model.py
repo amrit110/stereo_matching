@@ -19,7 +19,7 @@ Batch = namedtuple('Batch', ['left_patches', 'right_patches', 'labels'])
 class SiameseStereoMatching(tf.keras.Model):
     """Model implementation.
        Implementation of Luo, W., & Schwing, A. G. (n.d.). Efficient Deep Learning for Stereo Matching.
-    
+
     """
 
     def __init__(self, num_input_channels, device, exp_dir, logger):
@@ -27,6 +27,7 @@ class SiameseStereoMatching(tf.keras.Model):
         self.device = device
         self.logger = logger
         self.exp_dir = exp_dir
+        self.num_input_channels = num_input_channels
 
         self.patch_feature_module = self.create_patch_feature_module(num_input_channels)
 
@@ -54,7 +55,7 @@ class SiameseStereoMatching(tf.keras.Model):
         conv = tf.keras.layers.Conv2D(num_input_channels,
                                       (kernel_height, kernel_width),
                                       padding='valid',
-                                      kernel_initializer='truncated_normal')
+                                      kernel_initializer=tf.initializers.he_uniform())
         bn = tf.keras.layers.BatchNormalization()
         relu = tf.keras.layers.ReLU()
 
@@ -83,8 +84,8 @@ class SiameseStereoMatching(tf.keras.Model):
         fig = plt.figure()
         plt.plot(range(len(self.history['train_loss'])), self.history['train_loss'],
                  color='b', label='Training loss')
-        plt.plot(range(len(self.history['val_loss'])), self.history['val_loss'], 
-         	 color='r', label='Validation loss')
+        plt.plot(range(len(self.history['val_loss'])), self.history['val_loss'],
+                 color='r', label='Validation loss')
         plt.grid(True)
         plt.title('Loss plot during training', fontsize=15)
         plt.xlabel('Plot interval step', fontsize=15)
@@ -95,26 +96,41 @@ class SiameseStereoMatching(tf.keras.Model):
 
     def inference(self, left_image, right_image):
         outputs = self.call(left_image, right_image, training=False, inference=True)
-        outputs = tf.squeeze(tf.argmax(outputs, axis=-1))
-        row_indices, _ = tf.meshgrid(tf.range(0, outputs.shape[1]),
-                                     tf.range(0, outputs.shape[0]))
-        disp_prediction = row_indices - tf.dtypes.cast(outputs, dtype=tf.int32)
-        
+        outputs = tf.squeeze(outputs)
+        row_indices, _ = tf.dtypes.cast(tf.meshgrid(tf.range(0, outputs.shape[1]),
+                                                    tf.range(0,outputs.shape[0])),
+                                        dtype=tf.int64)
+        preds = []
+        for i in range(outputs.shape[1]):
+            pred_window_index = tf.argmax(outputs[:, i, max(0, i - 100):min(outputs.shape[1], i + 100)],
+                                          axis=-1)
+            pred_window_index = tf.dtypes.cast(pred_window_index,
+                                               dtype=tf.int64)
+            # NOTE: This can probably be done better, since it gathers
+            # repeatedly the same indices.
+            pred = tf.gather(row_indices[:, max(0, i - 100):min(outputs.shape[1], i + 100)],
+                             pred_window_index, axis=1)[0]
+            debug_t = np.array(pred)
+            preds.append(tf.expand_dims(pred, 1))
+
+        disp_prediction = tf.concat(preds, axis=1)
+        disp_prediction = row_indices - disp_prediction
+
         return disp_prediction
 
     def save_sample(self, disp_prediction, left_image, right_image, iteration):
         disp_img = np.array(disp_prediction)
-        disp_img = (disp_img * (disp_img >= 0))
+        disp_img[disp_img < 0] = 0
         cmap = plt.cm.jet
-        norm = plt.Normalize(vmin=disp_img.min(), vmax=disp_img.max()) 
+        norm = plt.Normalize(vmin=disp_img.min(), vmax=disp_img.max())
         disp_img = cmap(norm(disp_img))
         left_img_save = np.array(left_image)[0]
         left_img_save = self.normalize_uint8(left_img_save)
         right_img_save = np.array(right_image)[0]
         right_img_save = self.normalize_uint8(right_img_save)
-        self.save_images([left_img_save, 
+        self.save_images([left_img_save,
                           right_img_save,
-                          disp_img], 2, 
+                          disp_img], 2,
                          ['left image', 'right image', 'disparity'],
                          iteration)
 
@@ -144,7 +160,7 @@ class SiameseStereoMatching(tf.keras.Model):
            plt.imshow(image)
            a.set_title(title)
        fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
-       plt.savefig(join(self.exp_dir, 'output_sample_{}.png'.format(iteration)), 
+       plt.savefig(join(self.exp_dir, 'output_sample_{}.png'.format(iteration)),
                    bbox_inches='tight', pad_inches=0)
        plt.close(fig)
 
@@ -159,50 +175,70 @@ class SiameseStereoMatching(tf.keras.Model):
         self.history['train_loss'] = []
         self.history['val_loss'] = []
 
+        itx = 0
+        fixed_iters = 100 # Hard-coded since this doesn't make much of a difference.
         with tf.device(self.device):
-            for i in range(num_iterations):
-                # Training iteration.
-                left_patches, right_patches, labels = training_dataset.iterator.get_next()
-                batch = Batch(left_patches, right_patches, labels)
-                grads, t_loss = self.grads_fn(batch, training=True)
-                optimizer.apply_gradients(zip(grads, self.variables))
-                train_loss(t_loss)
+            while itx < num_iterations:
+                # Training iterations.
+                for i in range(fixed_iters):
+                    left_patches, right_patches, labels = training_dataset.iterator.get_next()
+                    batch = Batch(left_patches, right_patches, labels)
+                    grads, t_loss = self.grads_fn(batch, training=True)
+                    optimizer.apply_gradients(zip(grads, self.variables))
+                    train_loss(t_loss)
 
-                # Validation iteration.
-                left_patches, right_patches, labels = validation_dataset.iterator.get_next()
-                batch = Batch(left_patches, right_patches, labels)
-                v_loss = self.loss_fn(batch, training=False)
-                val_loss(v_loss)
+                # Validation iterations.
+                for i in range(fixed_iters):
+                    left_patches, right_patches, labels = validation_dataset.iterator.get_next()
+                    batch = Batch(left_patches, right_patches, labels)
+                    v_loss = self.loss_fn(batch, training=False)
+                    val_loss(v_loss)
 
-                if (i+1) % 100 == 0:
-                    self.history['train_loss'].append(train_loss.result().numpy())
-                    self.history['val_loss'].append(val_loss.result().numpy())
-                    self.plot_loss()
+                itx += fixed_iters
 
-                    paddings = tf.constant([[0, 0,], [18, 18], [18, 18], [0, 0]])
-                    random_img_idx = np.random.randint(0, validation_dataset.left_images.shape[0]) 
-                    sample_left_img = tf.pad(tf.expand_dims(validation_dataset.left_images[random_img_idx], 0), 
-                                             paddings, "CONSTANT")
-                    sample_right_img = tf.pad(tf.expand_dims(validation_dataset.right_images[random_img_idx], 0),
-                                              paddings, "CONSTANT")
-                    disparity_prediction = self.inference(sample_left_img, sample_right_img)
-                    self.save_sample(disparity_prediction, sample_left_img, sample_right_img, i) 
+                self.history['train_loss'].append(train_loss.result().numpy())
+                self.history['val_loss'].append(val_loss.result().numpy())
+                self.plot_loss()
+
+                paddings = tf.constant([[0, 0,], [18, 18], [18, 18], [0, 0]])
+                random_img_idx = np.random.randint(0, validation_dataset.left_images.shape[0])
+                # random_img_idx = 0
+                sample_left_img = tf.pad(tf.expand_dims(validation_dataset.left_images[random_img_idx], 0),
+                                         paddings, "CONSTANT")
+                sample_right_img = tf.pad(tf.expand_dims(validation_dataset.right_images[random_img_idx], 0),
+                                          paddings, "CONSTANT")
+                disparity_prediction = self.inference(sample_left_img, sample_right_img)
+                self.save_sample(disparity_prediction, sample_left_img,
+                                 sample_right_img, itx)
 
                 # Print train and eval losses.
-                self.logger.info('Train loss at iteration {}: {:04f}'.format(i+1, train_loss.result().numpy()))
-                self.logger.info('Validation loss at iteration {}: {:04f}'.format(i+1, val_loss.result().numpy()))
+                self.logger.info('Train loss at iteration {}: {:04f}'.format(itx+1, train_loss.result().numpy()))
+                self.logger.info('Validation loss at iteration {}: {:04f}'.format(itx+1, val_loss.result().numpy()))
 
     def call(self, left_input, right_input, training=None, mask=None, inference=False):
         left_feature = self.patch_feature_module(left_input, training=training)
         right_feature = self.patch_feature_module(right_input, training=training)
+
         if inference:
             inner_product = tf.einsum('ijkl,ijnl->ijkn', left_feature, right_feature)
         else:
-
             left_feature = tf.squeeze(left_feature)
             inner_product = tf.einsum('il,ijkl->ijk', left_feature, right_feature)
 
         return inner_product
+
+    def restore_model(self):
+        """ Function to restore trained model."""
+        with tf.device(self.device):
+            dummy_input = tf.constant(tf.zeros((5, 37, 37, self.num_input_channels)))
+            dummy_pred = self.call(dummy_input, dummy_input, training=False)
+            checkpoint_path = tf.train.latest_checkpoint(self.exp_dir)
+            tfe.Saver(self.variables).restore(checkpoint_path)
+
+    def save_model(self, iteration_step):
+        """ Function to save trained model."""
+        tfe.Saver(self.variables).save(self.exp_dir,
+                                       global_step=iteration_step)
 
 
 
@@ -219,13 +255,20 @@ if __name__ == '__main__':
         # print(a)
         # print(b)
         dummy_left_patch = tf.zeros((5, 37, 37, 3))
-        # dummy_left_patch = tf.zeros((5, 406, 1260, 3))
-        dummy_right_patch = tf.zeros((5, 406, 1260, 3))
+        # dummy_left_patch = tf.zeros((1, 406, 1260, 3))
+        dummy_right_patch = tf.zeros((5, 37, 237, 3))
         # dummy_left_patch = tf.transpose(dummy_left_patch, [0, 3, 1, 2])
         # dummy_right_patch = tf.transpose(dummy_right_patch, [0, 3, 1, 2])
         # paddings = tf.constant([[0, 0,], [18, 18], [18, 18], [0, 0]])
         # dummy_left_patch = tf.pad(dummy_left_patch, paddings, "CONSTANT")
         # dummy_right_patch = tf.pad(dummy_right_patch, paddings, "CONSTANT")
-        print(dummy_right_patch.shape)
-        outputs = model(dummy_left_patch, dummy_right_patch, training=False, inference=False)
+        outputs = model(dummy_left_patch, dummy_right_patch, training=False,
+                        inference=False)
         print(outputs.shape)
+        outputs = tf.squeeze(outputs)
+        # preds = []
+        # for i in range(outputs.shape[1]):
+        #     pred = tf.argmax(outputs[:, i, max(0, i - 100):min(outputs.shape[1], i + 100)], axis=-1)
+        #     preds.append(tf.expand_dims(pred, 1))
+        # preds = tf.concat(preds, axis=1)
+        # print(preds.shape)

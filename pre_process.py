@@ -91,7 +91,7 @@ def compute_valid_locations(disparity_image_paths, sample_ids, img_height,
 def find_and_store_patch_locations(settings):
     left_image_paths, right_image_paths, disparity_image_paths = \
             load_image_paths(settings.data_path, settings.left_img_folder,
-                             settings.left_img_folder, settings.disparity_folder)
+                             settings.right_img_folder, settings.disparity_folder)
     sample_indices = list(range(len(left_image_paths)))
     shuffle(sample_indices)
     train_ids = sample_indices[0:settings.num_train]
@@ -127,7 +127,7 @@ def find_and_store_patch_locations(settings):
 def display_sample(settings):
     left_image_paths, right_image_paths, disparity_image_paths = \
             load_image_paths(settings.data_path, settings.left_img_folder,
-                             settings.left_img_folder, settings.disparity_folder)
+                             settings.right_img_folder, settings.disparity_folder)
     idx = random.randint(0, len(left_image_paths))
     l_img = np.array(Image.open(left_image_paths[idx]))
     r_img = np.array(Image.open(right_image_paths[idx]))
@@ -159,3 +159,29 @@ def show_images(images, cols = 1, titles = None):
         a.set_title(title)
     fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
     plt.show()
+
+
+if __name__ == '__main__':
+    with open('cache/kitti_2015/training/patch_locations.pkl', 'rb') as handle:
+        valid_locations = pickle.load(handle)
+    left_image_paths, right_image_paths, disparity_image_paths = \
+            load_image_paths('data/kitti_2015/training',
+                             'image_2',
+                             'image_3',
+                             'disp_noc_1')
+    idx = 30001
+    sample_info = list(valid_locations['valid_locations_val'][idx])
+    sample_info = [int(i) for i in sample_info]
+    left_img = np.array(Image.open(left_image_paths[sample_info[0]]))
+    right_img = np.array(Image.open(right_image_paths[sample_info[0]]))
+    print(left_img.shape, right_img.shape)
+    left_patch = left_img[sample_info[2] - 18:sample_info[2] + 18 + 1,
+                          sample_info[1] - 18:sample_info[1] + 18 + 1,:]
+    right_patch = right_img[sample_info[2] - 18:sample_info[2] + 18 + 1,
+                            sample_info[3] - 18 - 100:sample_info[3] + 18 + 100 + 1,:]
+
+    print(left_patch.shape, right_patch.shape)
+    l_p = Image.fromarray(left_patch)
+    l_p.save('l_p_3.png')
+    r_p = Image.fromarray(right_patch)
+    r_p.save('r_p_3.png')
