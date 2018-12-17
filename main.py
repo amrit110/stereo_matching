@@ -32,7 +32,7 @@ tf.enable_eager_execution()
 parser = argparse.ArgumentParser(
     description='Re-implementation of Efficient Deep Learning for Stereo Matching')
 parser.add_argument('--resume', '-r', default=False, help='resume from checkpoint')
-parser.add_argument('--exp-name', default='debug_1', type=str,
+parser.add_argument('--exp-name', default='kitti_2015_run', type=str,
                     help='name of experiment')
 parser.add_argument('--log-level', default='INFO', choices = ['DEBUG', 'INFO'],
                     help='log-level to use')
@@ -82,6 +82,7 @@ LOGGER = logging.getLogger(__name__)
 exp_dir = join('experiments', '{}'.format(settings.exp_name))
 log_file = join(exp_dir, 'log.log')
 os.makedirs(exp_dir, exist_ok=True)
+os.makedirs(join(exp_dir, 'qualitative_samples'), exist_ok=True)
 setup_logging(log_path=log_file, log_level=settings.log_level, logger=LOGGER)
 settings_file = join(exp_dir, 'settings.log')
 with open(settings_file, 'w') as the_file:
