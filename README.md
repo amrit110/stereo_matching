@@ -39,7 +39,7 @@ python main.py --dataset kitti_2015 --patch-size 37 --disparity-range 201
 Example input images
 
 <p float="left">
- <img src="/plots/inputs_sample.png" width="640" />
+ <img src="/plots/inputs_sample.png" width="800" />
 </p>
 
 Disparity Ground-truth
