@@ -22,7 +22,7 @@ from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils import *
+from lib.utils import *
 
 
 def load_image_paths(data_path, left_img_folder, right_img_folder,

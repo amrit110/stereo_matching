@@ -161,9 +161,8 @@ class SiameseStereoMatching(tf.keras.Model):
         right_img_save = np.array(right_image)[0]
         right_img_save = self._normalize_uint8(right_img_save)
         self.save_images([left_img_save,
-                          right_img_save,
-                          disp_img], 2,
-                         ['left image', 'right image', 'disparity'],
+                          disp_img], 1,
+                         ['left image', 'disparity'],
                          iteration)
 
     def _normalize_uint8(self, array):
@@ -189,14 +188,17 @@ class SiameseStereoMatching(tf.keras.Model):
        fig = plt.figure(figsize=(20, 10))
        for n, (image, title) in enumerate(zip(images, titles)):
            a = fig.add_subplot(cols, np.ceil(n_images/float(cols)), n + 1)
+           image = np.squeeze(image)
            if image.ndim == 2:
                plt.gray()
            plt.imshow(image)
-           a.set_title(title)
+
+           a.axis('off')
+           a.set_title(title, fontsize=40)
        fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
        plt.savefig(join(self.exp_dir, 'qualitative_samples',
                         'output_sample_{}.png'.format(iteration)),
-                   bbox_inches='tight', pad_inches=0)
+                   bbox_inches='tight')
        plt.close(fig)
 
     def fit(self, training_dataset, validation_dataset, optimizer,

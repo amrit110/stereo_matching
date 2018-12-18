@@ -19,10 +19,10 @@ matplotlib.use('agg')
 import tensorflow as tf
 from tensorflow.contrib.eager.python import tfe
 
-from model import SiameseStereoMatching
-from dataset import Dataset
-from pre_process import *
-from utils import setup_logging
+from lib.model import SiameseStereoMatching
+from lib.dataset import Dataset
+from lib.pre_process import *
+from lib.utils import setup_logging
 
 # Enable eager execution.
 tf.enable_eager_execution()
@@ -32,7 +32,7 @@ tf.enable_eager_execution()
 parser = argparse.ArgumentParser(
     description='Re-implementation of Efficient Deep Learning for Stereo Matching')
 parser.add_argument('--resume', '-r', default=False, help='resume from checkpoint')
-parser.add_argument('--exp-name', default='kitti_2015_run', type=str,
+parser.add_argument('--exp-name', default='kitti_2015_run_1', type=str,
                     help='name of experiment')
 parser.add_argument('--log-level', default='INFO', choices = ['DEBUG', 'INFO'],
                     help='log-level to use')
@@ -77,7 +77,7 @@ elif settings.dataset == 'kitti_2015':
     setattr(settings, 'num_input_channels', 3)
 
 
-# Python logging and tensorboard.
+# Python logging.
 LOGGER = logging.getLogger(__name__)
 exp_dir = join('experiments', '{}'.format(settings.exp_name))
 log_file = join(exp_dir, 'log.log')
@@ -126,6 +126,8 @@ LOGGER.info('Initializing training and validation datasets ...')
 training_dataset = Dataset(settings, patch_locations, phase='train')
 validation_dataset = Dataset(settings, patch_locations, phase='val')
 
+
+# Training.
 LOGGER.info('Starting training ...')
 model.fit(training_dataset, validation_dataset, optimizer,
           settings.num_iterations)

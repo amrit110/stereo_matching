@@ -4,13 +4,13 @@
 import os
 import glob
 import pickle
+from PIL import Image
 
 import numpy as np
 import tensorflow as tf
 
-from pre_process import load_image_paths
-from utils import trim_image
-from PIL import Image
+from lib.pre_process import load_image_paths
+from lib.utils import trim_image
 
 
 def _load_image(image_path, img_height, img_width):
@@ -138,7 +138,8 @@ class Dataset:
             dataset_locations = patch_locations['valid_locations_train']
         elif phase == 'val':
             dataset_locations = patch_locations['valid_locations_val']
-
+            # NOTE: Repeat dataset so that we can have 40k iterations.
+            dataset_locations = dataset_locations.repeat(2, axis=0)
         dataset = tf.data.Dataset.from_tensor_slices(dataset_locations)
         dataset = dataset.map(self._parse_function)
         batched_dataset = dataset.batch(self._settings.batch_size)
