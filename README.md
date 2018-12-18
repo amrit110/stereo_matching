@@ -52,17 +52,17 @@ Disparity Ground-truth
 #### Example input patches
 
 <p float="left">
- <img src="/plots/sample_patch_left_1.png" width="320" />
+ <img src="/plots/sample_patch_left_1.png" width="50" />
  <img src="/plots/sample_patch_right_1.png" width="320" />
 </p>
 
 <p float="left">
- <img src="/plots/sample_patch_left_2.png" width="320" />
+ <img src="/plots/sample_patch_left_2.png" width="50" />
  <img src="/plots/sample_patch_right_2.png" width="320" />
 </p>
 
 <p float="left">
- <img src="/plots/sample_patch_left_3.png" width="320" />
+ <img src="/plots/sample_patch_left_3.png" width="50" />
  <img src="/plots/sample_patch_right_3.png" width="320" />
 </p>
 
@@ -71,15 +71,15 @@ Disparity Ground-truth
 #### Qualitative results
 
 <p float="left">
- <img src="/plots/qualitative_sample_1.png" width="640" />
+ <img src="/plots/qualitative_sample_1.png" width="800" />
 </p>
 
 <p float="left">
- <img src="/plots/qualitative_sample_2.png" width="640" />
+ <img src="/plots/qualitative_sample_2.png" width="800" />
 </p>
 
 <p float="left">
- <img src="/plots/qualitative_sample_3.png" width="640" />
+ <img src="/plots/qualitative_sample_3.png" width="800" />
 </p>
 
 ### KITTI 2012 Stereo
