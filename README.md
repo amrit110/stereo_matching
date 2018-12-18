@@ -96,3 +96,9 @@ Disparity Ground-truth
 <p float="left">
  <img src="/plots/qualitative_sample_6.png" width="800" />
 </p>
+
+## Possible next steps
+
+- [ ] Implement post processing to smoothen output.
+- [ ] Look into error metrics and do quantitative analysis.
+- [ ] Run inference on test video sequences.
