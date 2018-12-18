@@ -66,8 +66,6 @@ Disparity Ground-truth
  <img src="/plots/sample_patch_right_3.png" width="320" />
 </p>
 
-#### Training loss plot
-
 #### Qualitative results
 
 <p float="left">
@@ -87,13 +85,13 @@ Disparity Ground-truth
 #### Qualitative results
 
 <p float="left">
- <img src="/plots/qualitative_sample_4.png" width="640" />
+ <img src="/plots/qualitative_sample_4.png" width="800" />
 </p>
 
 <p float="left">
- <img src="/plots/qualitative_sample_5.png" width="640" />
+ <img src="/plots/qualitative_sample_5.png" width="800" />
 </p>
 
 <p float="left">
- <img src="/plots/qualitative_sample_6.png" width="640" />
+ <img src="/plots/qualitative_sample_6.png" width="800" />
 </p>
