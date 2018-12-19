@@ -81,6 +81,42 @@ Disparity Ground-truth
  <img src="/plots/qualitative_sample_3.png" width="800" />
 </p>
 
+##### Post-processing
+
+* Cost-aggregation
+
+<p float="left">
+ <img src="/plots/qualitative_sample_7.png" width="800" />
+ <img src="/plots/qualitative_sample_7_CA.png" width="800" />
+</p>
+
+<p float="left">
+ <img src="/plots/qualitative_sample_8.png" width="800" />
+ <img src="/plots/qualitative_sample_8_CA.png" width="800" />
+</p>
+
+A closer look to observe the smoothing of predictions, without cost
+aggregation and with respectively:
+
+<p float="left">
+ <img src="/plots/disp_sample_zoom.png" width="400" />
+ <img src="/plots/disp_sample_zoom_CA.png" width="400" />
+</p>
+
+
+#### Quantitative results
+
+* To compare with results reported in paper, look at Table-5, column `Ours(37)`.
+
+
+  |                                     | 3-pixel error (%)   |
+  |-------------------------------------|:-------------------:|
+  | baseline (paper)                    |     7.13            |
+  | baseline (re-implementation)        |     7.348           |
+  | baseline + CA (paper)               |     6.58            |
+  | baseline + CA (re-implementation)   |     6.871           |
+
+
 ### KITTI 2012 Stereo
 
 #### Qualitative results

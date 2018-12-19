@@ -48,12 +48,17 @@ parser.add_argument('--find-patch-locations', default=False,
                     help='find and store patch locations')
 parser.add_argument('--num_iterations', default=40000,
                     help='number of training iterations')
+parser.add_argument('--phase', default='training', choices=['training', 'testing'],
+                    help='training or testing, if testing perform inference on test set.')
+parser.add_argument('--post-process', default=False,
+                    help='toggle use of post-processing.')
+parser.add_argument('--eval', default=False,
+                    help='compute error on validation set.')
 
 settings = parser.parse_args()
 
 
 # Settings, hyper-parameters.
-setattr(settings, 'phase', 'training')
 setattr(settings, 'data_path', join('data', settings.dataset, settings.phase))
 setattr(settings, 'out_cache_path', join('cache', settings.dataset,
                                          settings.phase))
@@ -95,22 +100,11 @@ with open(settings_file, 'w') as the_file:
 random.seed(settings.seed)
 
 
-# Patch locations.
-patch_locations_path = join(settings.out_cache_path, 'patch_locations.pkl')
-if settings.find_patch_locations or not isfile(patch_locations_path):
-    LOGGER.info('Calculating patch locations ...')
-    find_and_store_patch_locations(settings)
-with open(patch_locations_path, 'rb') as handle:
-    patch_locations = pickle.load(handle)
-    LOGGER.info('Patch locations loaded ...')
-
-
 # Model.
 device = '/cpu:0' if tfe.num_gpus() == 0 else '/gpu:0'
 global_step = tf.Variable(0, trainable=False)
 with tf.device(device):
-    model = SiameseStereoMatching(settings.num_input_channels, device, exp_dir,
-                                  LOGGER, global_step)
+    model = SiameseStereoMatching(settings, device, exp_dir, LOGGER, global_step)
 
 
 # Optimizer
@@ -121,14 +115,33 @@ learning_rate = tf.train.piecewise_constant(global_step, boundaries, lr_values)
 optimizer = tf.train.AdagradOptimizer(learning_rate=learning_rate)
 
 
-# Dataset iterators.
-LOGGER.info('Initializing training and validation datasets ...')
-training_dataset = Dataset(settings, patch_locations, phase='train')
-validation_dataset = Dataset(settings, patch_locations, phase='val')
+# Training/Testing
+if settings.phase == 'training':
+    # Find patch locations or load from cache.
+    patch_locations_path = join(settings.out_cache_path, 'patch_locations.pkl')
+    if settings.find_patch_locations or not isfile(patch_locations_path):
+        LOGGER.info('Calculating patch locations ...')
+        find_and_store_patch_locations(settings)
+    with open(patch_locations_path, 'rb') as handle:
+        patch_locations = pickle.load(handle)
+        LOGGER.info('Patch locations loaded ...')
 
+    # Dataset iterators.
+    LOGGER.info('Initializing training and validation datasets ...')
+    training_dataset = Dataset(settings, patch_locations, phase='train')
+    validation_dataset = Dataset(settings, patch_locations, phase='val')
 
-# Training.
-LOGGER.info('Starting training ...')
-model.fit(training_dataset, validation_dataset, optimizer,
-          settings.num_iterations)
-LOGGER.info('Training done ...')
+    if settings.eval:
+        model.restore_model('checkpoints-40000')
+        validation_dataset = Dataset(settings, patch_locations, phase='val')
+        error = model.run_inference_val(validation_dataset)
+        LOGGER.info('Validation 3 pixel error: {}'.format(error))
+    else:
+        # Training.
+        LOGGER.info('Starting training ...')
+        model.fit(training_dataset, validation_dataset, optimizer,
+                  settings.num_iterations)
+        LOGGER.info('Training done ...')
+elif settings.phase == 'testing':
+    testing_dataset = Dataset(settings, None, phase='test')
+    model.run_inference_on_test(testing_dataset)

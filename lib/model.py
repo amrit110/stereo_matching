@@ -21,25 +21,29 @@ class SiameseStereoMatching(tf.keras.Model):
        Implementation of Luo, W., & Schwing, A. G. (n.d.). Efficient Deep Learning for Stereo Matching.
 
     Attributes:
-        device (str): 'cpu' or specific gpu.
-        logger (logging.Logger): python logger to log training progress.
-        exp_dir (str): path to experiment directory.
-        num_input_channels (int): number of input channels.
-        patch_feature_module (tf.keras.Sequential): patch feature extraction network.
-        global_step (tf.Variable): training step counter.
+        _device (str): 'cpu' or specific gpu.
+        _logger (logging.Logger): python logger to log training progress.
+        _exp_dir (str): path to experiment directory.
+        _num_input_channels (int): number of input channels.
+        _patch_feature_module (tf.keras.Sequential): patch feature extraction network.
+        _global_step (tf.Variable): training step counter.
+        _half_range (int): half range of disparity prediction window.
+        _post_process (bool): flag to toggle post-processing
 
     """
 
-    def __init__(self, num_input_channels, device, exp_dir, logger, global_step):
+    def __init__(self, settings, device, exp_dir, logger, global_step):
         """Constructor."""
         super(SiameseStereoMatching, self).__init__()
-        self.device = device
-        self.logger = logger
-        self.exp_dir = exp_dir
-        self.num_input_channels = num_input_channels
-        self.global_step = global_step
+        self._device = device
+        self._logger = logger
+        self._exp_dir = exp_dir
+        self._num_input_channels = settings.num_input_channels
+        self._global_step = global_step
+        self._half_range = settings.half_range
+        self._post_process = settings.post_process
 
-        self.patch_feature_module = self._create_patch_feature_module(num_input_channels)
+        self.patch_feature_module = self._create_patch_feature_module(self._num_input_channels)
 
     def _create_patch_feature_module(self, num_input_channels):
         c = num_input_channels
@@ -95,7 +99,7 @@ class SiameseStereoMatching(tf.keras.Model):
     def plot_loss(self):
         """Plot current loss, and save figure to experiments folder."""
         fig = plt.figure()
-        iterations_range = np.arange(100, self.global_step.numpy() + 1, 100)
+        iterations_range = np.arange(100, self._global_step.numpy() + 1, 100)
         plt.plot(iterations_range, self.history['train_loss'],
                  color='b', label='Training loss')
         plt.plot(iterations_range, self.history['val_loss'],
@@ -105,8 +109,23 @@ class SiameseStereoMatching(tf.keras.Model):
         plt.xlabel('Training Iteration', fontsize=15)
         plt.ylabel('Loss', fontsize=15)
         plt.legend(fontsize=15)
-        plt.savefig(join(self.exp_dir, 'loss.png'))
+        plt.savefig(join(self._exp_dir, 'loss.png'))
         plt.close(fig)
+
+    def run_inference_on_test(self, testing_dataset):
+        """Run model inference on test data, save outputs (qualitative results)."""
+        itx = 0
+        while True:
+            try:
+                self._logger.info('Running inference on test sample: {}'.format(itx))
+                left_img, right_img = testing_dataset.iterator.get_next()
+                disparity_prediction = self.inference(left_img, right_img)
+                self.save_sample(disparity_prediction, left_img,
+                                 right_img, itx)
+                itx += 1
+            except tf.errors.OutOfRangeError:
+                self._logger.info('Reached end of testing dataset!')
+                break
 
     def inference(self, left_image, right_image):
         """Run model on test images.
@@ -119,20 +138,24 @@ class SiameseStereoMatching(tf.keras.Model):
             disp_prediction (tf.Tensor): disparity prediction.
 
         """
-        outputs = self.call(left_image, right_image, training=False, inference=True)
-        outputs = tf.squeeze(outputs)
-        row_indices, _ = tf.dtypes.cast(tf.meshgrid(tf.range(0, outputs.shape[1]),
-                                                    tf.range(0,outputs.shape[0])),
+        cost_volume = self.call(left_image, right_image, training=False, inference=True)
+        if self._post_process:
+            with tf.device("CPU:0"):
+                cost_volume = apply_cost_aggregation(cost_volume)
+        cost_volume = tf.squeeze(cost_volume)
+        row_indices, _ = tf.dtypes.cast(tf.meshgrid(tf.range(0, cost_volume.shape[1]),
+                                                    tf.range(0, cost_volume.shape[0])),
                                         dtype=tf.int64)
         preds = []
-        for i in range(outputs.shape[1]):
-            pred_window_index = tf.argmax(outputs[:, i, max(0, i - 100):min(outputs.shape[1], i + 100)],
-                                          axis=-1)
-            pred_window_index = tf.dtypes.cast(pred_window_index,
-                                               dtype=tf.int64)
+        img_width = cost_volume.shape[1]
+        for i in range(img_width):
+            pred_window_index = tf.argmax(
+                cost_volume[:, i, max(0, i - self._half_range):min(img_width, i + self._half_range)],
+                axis=-1)
+            pred_window_index = tf.dtypes.cast(pred_window_index, dtype=tf.int64)
             # NOTE: This can probably be done better, since it gathers
             # repeatedly the same indices.
-            pred = tf.gather(row_indices[:, max(0, i - 100):min(outputs.shape[1], i + 100)],
+            pred = tf.gather(row_indices[:, max(0, i - self._half_range):min(img_width, i + self._half_range)],
                              pred_window_index, axis=1)[0]
             preds.append(tf.expand_dims(pred, 1))
 
@@ -160,10 +183,8 @@ class SiameseStereoMatching(tf.keras.Model):
         left_img_save = self._normalize_uint8(left_img_save)
         right_img_save = np.array(right_image)[0]
         right_img_save = self._normalize_uint8(right_img_save)
-        self.save_images([left_img_save,
-                          disp_img], 1,
-                         ['left image', 'disparity'],
-                         iteration)
+        self.save_images([left_img_save, disp_img], 1,
+                         ['left image', 'disparity'], iteration)
 
     def _normalize_uint8(self, array):
         """Normalize image array and convert to uint8."""
@@ -196,7 +217,7 @@ class SiameseStereoMatching(tf.keras.Model):
            a.axis('off')
            a.set_title(title, fontsize=40)
        fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
-       plt.savefig(join(self.exp_dir, 'qualitative_samples',
+       plt.savefig(join(self._exp_dir, 'qualitative_samples',
                         'output_sample_{}.png'.format(iteration)),
                    bbox_inches='tight')
        plt.close(fig)
@@ -228,7 +249,7 @@ class SiameseStereoMatching(tf.keras.Model):
         # that the validation loss in the first few iterations is also
         # meaningful.
         fixed_iters = 100
-        with tf.device(self.device):
+        with tf.device(self._device):
             while itx < num_iterations:
                 # NOTE: Ok, so this seems ugly, but apparently tfe does not
                 # support re-initializable dataset iterators yet. So, need to fix
@@ -250,30 +271,70 @@ class SiameseStereoMatching(tf.keras.Model):
                         val_loss(v_loss)
 
                     itx += fixed_iters
-                    self.global_step.assign_add(fixed_iters)
+                    self._global_step.assign_add(fixed_iters)
 
                     self.history['train_loss'].append(train_loss.result().numpy())
                     self.history['val_loss'].append(val_loss.result().numpy())
                     self.plot_loss()
 
-                    paddings = validation_dataset.get_paddings()
-                    random_img_idx = np.random.randint(0, validation_dataset.left_images.shape[0])
-                    sample_left_img = tf.pad(tf.expand_dims(validation_dataset.left_images[random_img_idx], 0),
-                                             paddings, "CONSTANT")
-                    sample_right_img = tf.pad(tf.expand_dims(validation_dataset.right_images[random_img_idx], 0),
-                                              paddings, "CONSTANT")
-                    disparity_prediction = self.inference(sample_left_img, sample_right_img)
+                    random_img_idx = np.random.choice(validation_dataset.sample_ids)
+                    disparity_prediction = self._run_inference_single(validation_dataset,
+                                                                      random_img_idx)
                     self.save_sample(disparity_prediction, sample_left_img,
                                      sample_right_img, itx)
 
                     # Print train and eval losses.
-                    self.logger.info('Train loss at iteration {}: {:04f}'.format(itx+1, train_loss.result().numpy()))
-                    self.logger.info('Validation loss at iteration {}: {:04f}'.format(itx+1, val_loss.result().numpy()))
+                    self._logger.info('Train loss at iteration {}: {:04f}'.\
+                                      format(itx+1, train_loss.result().numpy()))
+                    self._logger.info('Validation loss at iteration {}: {:04f}'.\
+                                     format(itx+1, val_loss.result().numpy()))
 
                     # Save checkpoint.
                     self.save_model()
                 except tf.errors.OutOfRangeError:
                     break
+
+    def _run_inference_single(self, validation_dataset, idx):
+        """Run inference on a validation set image."""
+        paddings = validation_dataset.get_paddings()
+        left_img = tf.pad(tf.expand_dims(validation_dataset.left_images[idx], 0),
+                          paddings, "CONSTANT")
+        right_img = tf.pad(tf.expand_dims(validation_dataset.right_images[idx], 0),
+                           paddings, "CONSTANT")
+        disparity_prediction = self.inference(left_img, right_img)
+
+        return disparity_prediction
+
+    def run_inference_val(self, validation_dataset):
+        """Run inference on validation set, compute 3-pixel error metric.
+
+        Args:
+            validation_dataset (Dataset): validation dataset object.
+
+        Returns:
+            mean_error (float): 3-pixel mean error over validation set.
+
+        """
+        error = 0
+        self._logger.info('Computing error on validation set ...')
+        for i, idx in enumerate(validation_dataset.sample_ids):
+            disparity_prediction = self._run_inference_single(validation_dataset, idx)
+            disparity_ground_truth  = validation_dataset.disparity_images[idx]
+
+            valid_gt_pixels = (disparity_ground_truth != 0).astype('float')
+            masked_prediction_valid = disparity_prediction * valid_gt_pixels
+            num_valid_gt_pixels = valid_gt_pixels.sum()
+
+            # NOTE: Use 3-pixel error metric for now.
+            num_error_pixels = (np.abs(masked_prediction_valid -
+                                  disparity_ground_truth) > 3).sum()
+            error += num_error_pixels / num_valid_gt_pixels
+
+            self._logger.info('Error sum {:04f}, {} samples evaluated ...'.format(error, i+1))
+
+        mean_error = error / len(validation_dataset.sample_ids)
+
+        return mean_error
 
     def call(self, left_input, right_input, training=None, mask=None, inference=False):
         """Forward pass call.
@@ -308,21 +369,50 @@ class SiameseStereoMatching(tf.keras.Model):
 
         return inner_product
 
-    def restore_model(self):
+    def restore_model(self, checkpoint_name=None):
         """ Function to restore trained model."""
-        with tf.device(self.device):
-            dummy_input = tf.constant(tf.zeros((5, 37, 37, self.num_input_channels)))
+        with tf.device(self._device):
+            dummy_input = tf.constant(tf.zeros((5, 37, 37, self._num_input_channels)))
             dummy_pred = self.call(dummy_input, dummy_input, training=False)
-            checkpoint_path = tf.train.latest_checkpoint(join(self.exp_dir,
-                                                              'checkpoints',
-                                                              'checkpoints'))
+            checkpoint_path = join(self._exp_dir, 'checkpoints')
+            if checkpoint_name is None:
+                checkpoint_path = tf.train.latest_checkpoint(checkpoint_path)
+            else:
+                checkpoint_path = join(checkpoint_path, checkpoint_name)
             tfe.Saver(self.variables).restore(checkpoint_path)
 
     def save_model(self):
         """ Function to save trained model."""
-        tfe.Saver(self.variables).save(join(self.exp_dir, 'checkpoints', 'checkpoints'),
-                                       global_step=self.global_step)
+        tfe.Saver(self.variables).save(join(self._exp_dir, 'checkpoints', 'checkpoints'),
+                                       global_step=self._global_step)
 
+
+def apply_cost_aggregation(cost_volume):
+    """Apply cost-aggregation post-processing to network predictions.
+
+    Performs an average pooling operation over raw network predictions to smoothen
+    the output.
+
+    Args:
+        cost_volume (tf.Tensor): cost volume predictions from network.
+
+    Returns:
+        cost_volume (tf.Tensor): aggregated cost volume.
+
+    """
+    # NOTE: Not ideal but better than zero padding, since we average.
+    cost_volume = tf.pad(cost_volume, tf.constant([[0, 0,], [2, 2,], [2, 2], [0, 0]]),
+                         "REFLECT")
+
+    # NOTE: This is a memory intensive operation, as pooling is not done
+    # in-place. Pooling requires a copy buffer of the same size as the cost
+    # volume. Two naive ways to get around this, chunk up image into blocks,
+    # or use CPU.
+    return tf.layers.average_pooling2d(cost_volume,
+                                       pool_size=(5, 5),
+                                       strides=(1, 1),
+                                       padding='VALID',
+                                       data_format='channels_last')
 
 
 if __name__ == '__main__':
@@ -334,25 +424,8 @@ if __name__ == '__main__':
 
     # NOTE: Some code used for debugging.
     with tf.device(device):
-        model = SiameseStereoMatching(3, device, None, None)
-        # a, b = tf.meshgrid(tf.range(0, 1224), tf.range(0, 370))
-        # print(a)
-        # print(b)
-        dummy_left_patch = tf.zeros((5, 37, 37, 3))
-        # dummy_left_patch = tf.zeros((1, 406, 1260, 3))
-        dummy_right_patch = tf.zeros((5, 37, 237, 3))
-        # dummy_left_patch = tf.transpose(dummy_left_patch, [0, 3, 1, 2])
-        # dummy_right_patch = tf.transpose(dummy_right_patch, [0, 3, 1, 2])
-        # paddings = tf.constant([[0, 0,], [18, 18], [18, 18], [0, 0]])
-        # dummy_left_patch = tf.pad(dummy_left_patch, paddings, "CONSTANT")
-        # dummy_right_patch = tf.pad(dummy_right_patch, paddings, "CONSTANT")
-        outputs = model(dummy_left_patch, dummy_right_patch, training=False,
-                        inference=False)
-        print(outputs.shape)
-        outputs = tf.squeeze(outputs)
-        # preds = []
-        # for i in range(outputs.shape[1]):
-        #     pred = tf.argmax(outputs[:, i, max(0, i - 100):min(outputs.shape[1], i + 100)], axis=-1)
-        #     preds.append(tf.expand_dims(pred, 1))
-        # preds = tf.concat(preds, axis=1)
-        # print(preds.shape)
+        dummy_input = tf.random.uniform((1, 406, 1260, 1260))
+        dummy_output = tf.Variable(tf.zeros_like(dummy_input))
+        pool = apply_cost_aggregation(dummy_input)
+        tf.assign(dummy_output, pool)
+        print(dummy_output)
