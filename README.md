@@ -34,6 +34,7 @@ python main.py --dataset kitti_2015 --patch-size 37 --disparity-range 201
 
 * After training for 40k iterations.
 * Qualitative results on validation set.
+* 3-pixel error evaluation on validation set.
 
 ### KITTI 2015 Stereo
 
