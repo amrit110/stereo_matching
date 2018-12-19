@@ -85,15 +85,19 @@ Disparity Ground-truth
 
 * Cost-aggregation
 
+Without cost-aggregation
+
 <p float="left">
  <img src="/plots/qualitative_sample_7.png" width="800" />
+</p>
+
+
+With cost-aggregation
+
+<p float="left">
  <img src="/plots/qualitative_sample_7_CA.png" width="800" />
 </p>
 
-<p float="left">
- <img src="/plots/qualitative_sample_8.png" width="800" />
- <img src="/plots/qualitative_sample_8_CA.png" width="800" />
-</p>
 
 A closer look to observe the smoothing of predictions, without cost
 aggregation and with respectively:
