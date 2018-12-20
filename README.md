@@ -117,9 +117,9 @@ aggregation and with respectively:
   |                                     | 3-pixel error (%)   |
   |-------------------------------------|:-------------------:|
   | baseline (paper)                    |     7.13            |
-  | baseline (re-implementation)        |     7.348           |
+  | baseline (re-implementation)        |     7.271           |
   | baseline + CA (paper)               |     6.58            |
-  | baseline + CA (re-implementation)   |     6.871           |
+  | baseline + CA (re-implementation)   |     6.527           |
 
 
 ### KITTI 2012 Stereo
@@ -143,4 +143,4 @@ aggregation and with respectively:
 - [ ] Implement post processing to smoothen output.
 - [ ] Look into error metrics and do quantitative analysis.
 - [ ] Run inference on test video sequences.
-- [ ] Instead of the batch matrix multiplication during inference, which constructs a `B x H x W x W` tensor, use a loop to compute cost volume over the disparity range. Tensorflow VM might figure out that it should parallelise operations over the loop. 
+- [x] Instead of the batch matrix multiplication during inference, which constructs a `B x H x W x W` tensor, use a loop to compute cost volume over the disparity range. Tensorflow VM might figure out that it should parallelise operations over the loop. 

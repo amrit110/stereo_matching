@@ -59,7 +59,9 @@ def _load_images(left_image_paths, right_image_paths, disparity_paths, img_heigh
     for idx in range(left_image_paths.shape[0]):
         left_images.append(_load_image(left_image_paths[idx], img_height, img_width))
         right_images.append(_load_image(right_image_paths[idx], img_height, img_width))
-        disparity_images.append(_load_disparity(disparity_paths[idx], img_height, img_width))
+
+        if disparity_paths:
+            disparity_images.append(_load_disparity(disparity_paths[idx], img_height, img_width))
 
     return (tf.convert_to_tensor(left_images),
             tf.convert_to_tensor(right_images),

@@ -32,12 +32,12 @@ tf.enable_eager_execution()
 parser = argparse.ArgumentParser(
     description='Re-implementation of Efficient Deep Learning for Stereo Matching')
 parser.add_argument('--resume', '-r', default=False, help='resume from checkpoint')
-parser.add_argument('--exp-name', default='kitti_2015_run_1', type=str,
+parser.add_argument('--exp-name', default='kitti_2012_run', type=str,
                     help='name of experiment')
 parser.add_argument('--log-level', default='INFO', choices = ['DEBUG', 'INFO'],
                     help='log-level to use')
 parser.add_argument('--batch-size', default=128, help='batch-size to use')
-parser.add_argument('--dataset', default='kitti_2015', choices=['kitti_2012',
+parser.add_argument('--dataset', default='kitti_2012', choices=['kitti_2012',
                                                                 'kitti_2015'],
                     help='dataset')
 parser.add_argument('--seed', default=3, help='random seed')
@@ -143,5 +143,6 @@ if settings.phase == 'training':
                   settings.num_iterations)
         LOGGER.info('Training done ...')
 elif settings.phase == 'testing':
+    model.restore_model('checkpoints-40000')
     testing_dataset = Dataset(settings, None, phase='test')
     model.run_inference_on_test(testing_dataset)

@@ -28,7 +28,7 @@ class SiameseStereoMatching(tf.keras.Model):
         _patch_feature_module (tf.keras.Sequential): patch feature extraction network.
         _global_step (tf.Variable): training step counter.
         _half_range (int): half range of disparity prediction window.
-        _post_process (bool): flag to toggle post-processing
+        _post_process (bool): flag to toggle post-processing.
 
     """
 
@@ -40,6 +40,7 @@ class SiameseStereoMatching(tf.keras.Model):
         self._exp_dir = exp_dir
         self._num_input_channels = settings.num_input_channels
         self._global_step = global_step
+        self._disparity_range = settings.disparity_range
         self._half_range = settings.half_range
         self._post_process = settings.post_process
 
@@ -138,28 +139,27 @@ class SiameseStereoMatching(tf.keras.Model):
             disp_prediction (tf.Tensor): disparity prediction.
 
         """
-        cost_volume = self.call(left_image, right_image, training=False, inference=True)
+        cost_volume, win_indices = self.call(left_image, right_image, training=False,
+                                             inference=True)
+        img_height, img_width = cost_volume.shape[1], cost_volume.shape[2] # 1 x H x W x C
         if self._post_process:
-            with tf.device("CPU:0"):
-                cost_volume = apply_cost_aggregation(cost_volume)
+            cost_volume = apply_cost_aggregation(cost_volume)
         cost_volume = tf.squeeze(cost_volume)
-        row_indices, _ = tf.dtypes.cast(tf.meshgrid(tf.range(0, cost_volume.shape[1]),
-                                                    tf.range(0, cost_volume.shape[0])),
+        row_indices, _ = tf.dtypes.cast(tf.meshgrid(tf.range(0, img_width),
+                                                    tf.range(0, img_height)),
                                         dtype=tf.int64)
-        preds = []
-        img_width = cost_volume.shape[1]
-        for i in range(img_width):
-            pred_window_index = tf.argmax(
-                cost_volume[:, i, max(0, i - self._half_range):min(img_width, i + self._half_range)],
-                axis=-1)
-            pred_window_index = tf.dtypes.cast(pred_window_index, dtype=tf.int64)
-            # NOTE: This can probably be done better, since it gathers
-            # repeatedly the same indices.
-            pred = tf.gather(row_indices[:, max(0, i - self._half_range):min(img_width, i + self._half_range)],
-                             pred_window_index, axis=1)[0]
-            preds.append(tf.expand_dims(pred, 1))
 
-        disp_prediction = tf.concat(preds, axis=1)
+        disp_prediction_indices = tf.argmax(cost_volume, axis=-1)
+
+        disp_prediction = []
+        for i in range(img_width):
+            column_disp_prediction = tf.gather(win_indices[i],
+                                               disp_prediction_indices[:, i],
+                                               axis=0)
+            column_disp_prediction = tf.expand_dims(column_disp_prediction, 1)
+            disp_prediction.append(column_disp_prediction)
+
+        disp_prediction = tf.concat(disp_prediction, 1)
         disp_prediction = row_indices - disp_prediction
 
         return disp_prediction
@@ -362,12 +362,34 @@ class SiameseStereoMatching(tf.keras.Model):
         right_feature = self.patch_feature_module(right_input, training=training)
 
         if inference:
-            inner_product = tf.einsum('ijkl,ijnl->ijkn', left_feature, right_feature)
+            inner_product, win_indices = [], []
+            img_height, img_width = right_feature.shape[1], right_feature.shape[2]
+            row_indices = tf.dtypes.cast(tf.range(0, img_width), dtype=tf.int64)
+
+            for i in range(img_width):
+                left_column_features = tf.squeeze(left_feature[:, :, i])
+                start_win = max(0, i - self._half_range)
+                end_win = max(self._disparity_range, self._half_range + i + 1)
+                start_win = start_win - max(0, end_win - img_width.value)
+                end_win = min(img_width, end_win)
+
+                right_win_features = tf.squeeze(right_feature[:, :, start_win:end_win])
+                win_indices_column = tf.expand_dims(row_indices[start_win:end_win], 0)
+                inner_product_column = tf.einsum('ij,ikj->ik', left_column_features,
+                                                 right_win_features)
+                inner_product_column = tf.expand_dims(inner_product_column, 1)
+                inner_product.append(inner_product_column)
+                win_indices.append(win_indices_column)
+
+            inner_product = tf.expand_dims(tf.concat(inner_product, 1), 0)
+            win_indices = tf.concat(win_indices, 0)
+
+            return inner_product, win_indices
         else:
             left_feature = tf.squeeze(left_feature)
             inner_product = tf.einsum('il,ijkl->ijk', left_feature, right_feature)
 
-        return inner_product
+            return inner_product
 
     def restore_model(self, checkpoint_name=None):
         """ Function to restore trained model."""
@@ -404,28 +426,8 @@ def apply_cost_aggregation(cost_volume):
     cost_volume = tf.pad(cost_volume, tf.constant([[0, 0,], [2, 2,], [2, 2], [0, 0]]),
                          "REFLECT")
 
-    # NOTE: This is a memory intensive operation, as pooling is not done
-    # in-place. Pooling requires a copy buffer of the same size as the cost
-    # volume. Two naive ways to get around this, chunk up image into blocks,
-    # or use CPU.
     return tf.layers.average_pooling2d(cost_volume,
                                        pool_size=(5, 5),
                                        strides=(1, 1),
                                        padding='VALID',
                                        data_format='channels_last')
-
-
-if __name__ == '__main__':
-    tf.enable_eager_execution()
-
-    tf.set_random_seed(0)
-    np.random.seed(0)
-    device = '/cpu:0' if tfe.num_gpus() == 0 else '/gpu:0'
-
-    # NOTE: Some code used for debugging.
-    with tf.device(device):
-        dummy_input = tf.random.uniform((1, 406, 1260, 1260))
-        dummy_output = tf.Variable(tf.zeros_like(dummy_input))
-        pool = apply_cost_aggregation(dummy_input)
-        tf.assign(dummy_output, pool)
-        print(dummy_output)
